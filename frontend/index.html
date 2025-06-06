@@ -231,11 +231,11 @@
             </div>
             <div class="sunburst-controls" style="margin-top:20px;">
                 <label style="display:block; margin-bottom:8px;">Min Angle (deg):
-                    <input type="range" id="minAngleSlider" min="1" max="10" value="1">
+                    <input type="range" id="minAngleSlider" min="1" max="50" value="1">
                     <span id="minAngleValue">1</span>
                 </label>
                 <label style="display:block; margin-bottom:8px;">Ring Thickness:
-                    <input type="range" id="ringThicknessSlider" min="2" max="10" value="3">
+                    <input type="range" id="ringThicknessSlider" min="2" max="50" value="3">
                     <span id="ringThicknessValue">3</span>
                 </label>
             </div>
@@ -335,17 +335,17 @@
             }
 
             setupLighting() {
-                const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+                const ambientLight = new THREE.AmbientLight(0x404040, 1.0);
                 this.scene.add(ambientLight);
 
-                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-                directionalLight.position.set(10, 10, 5);
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
+                directionalLight.position.set(10, 10, 10);
                 directionalLight.castShadow = true;
                 directionalLight.shadow.mapSize.width = 2048;
                 directionalLight.shadow.mapSize.height = 2048;
                 this.scene.add(directionalLight);
 
-                const pointLight = new THREE.PointLight(0x4CAF50, 0.5, 100);
+                const pointLight = new THREE.PointLight(0x4CAF50, 0.8, 150);
                 pointLight.position.set(0, 0, 30);
                 this.scene.add(pointLight);
             }
