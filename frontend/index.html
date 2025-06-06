@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Tree Timeline Visualizer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            overflow: hidden;
+            color: white;
+        }
+
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #threejs-container {
+            width: 100%;
+            height: 100%;
+        }
+
+        .control-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            min-width: 300px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .info-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            min-width: 250px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .hover-panel {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            border-radius: 10px;
+            padding: 15px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            max-width: 300px;
+        }
+
+        .timeline-controls {
+            margin-bottom: 20px;
+        }
+
+        .timeline-slider {
+            width: 100%;
+            margin: 15px 0;
+            -webkit-appearance: none;
+            height: 8px;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.2);
+            outline: none;
+        }
+
+        .timeline-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #4CAF50;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
+        }
+
+        .timeline-slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #4CAF50;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
+        }
+
+        .control-buttons {
+            display: flex;
+            gap: 10px;
+            margin: 15px 0;
+        }
+
+        .btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 14px;
+        }
+
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn.active {
+            background: #4CAF50;
+            box-shadow: 0 0 15px rgba(76, 175, 80, 0.5);
+        }
+
+        .info-item {
+            margin: 10px 0;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .info-label {
+            font-size: 12px;
+            opacity: 0.7;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .info-value {
+            font-size: 16px;
+            font-weight: 600;
+            margin-top: 3px;
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            font-size: 18px;
+        }
+
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 3px solid white;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            color: #ff6b6b;
+            padding: 10px;
+            background: rgba(255, 107, 107, 0.1);
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+
+        .legend {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 5px 0;
+        }
+
+        .color-box {
+            width: 16px;
+            height: 16px;
+            margin-right: 8px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="threejs-container"></div>
+        
+        <div class="control-panel">
+            <h3>Timeline Controls</h3>
+            <div class="timeline-controls">
+                <input type="range" id="timelineSlider" class="timeline-slider" 
+                       min="0" max="0" value="0" step="1">
+                <div class="control-buttons">
+                    <button class="btn" id="playBtn">Play</button>
+                    <button class="btn" id="pauseBtn">Pause</button>
+                    <button class="btn" id="resetBtn">Reset</button>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Current Scan</div>
+                    <div class="info-value" id="currentScan">1 of 1</div>
+                </div>
+            </div>
+            <div class="sunburst-controls" style="margin-top:20px;">
+                <label style="display:block; margin-bottom:8px;">Min Angle (deg):
+                    <input type="range" id="minAngleSlider" min="1" max="50" value="1">
+                    <span id="minAngleValue">1</span>
+                </label>
+                <label style="display:block; margin-bottom:8px;">Ring Thickness:
+                    <input type="range" id="ringThicknessSlider" min="2" max="50" value="3">
+                    <span id="ringThicknessValue">3</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="info-panel">
+            <h3>Scan Information</h3>
+            <div class="info-item">
+                <div class="info-label">Timestamp</div>
+                <div class="info-value" id="scanTimestamp">-</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Total Files</div>
+                <div class="info-value" id="totalFiles">-</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Total Size</div>
+                <div class="info-value" id="totalSize">-</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Scan Duration</div>
+                <div class="info-value" id="scanDuration">-</div>
+            </div>
+        </div>
+
+        <div class="hover-panel" id="hoverPanel">
+            <div id="hoverContent"></div>
+        </div>
+
+        <div class="legend">
+            <h4>File Types</h4>
+            <div class="legend-item">
+                <div class="color-box" style="background-color: #f7df1e;"></div>
+                <span>JavaScript</span>
+            </div>
+            <div class="legend-item">
+                <div class="color-box" style="background-color: #3776ab;"></div>
+                <span>Python</span>
+            </div>
+            <div class="legend-item">
+                <div class="color-box" style="background-color: #e34c26;"></div>
+                <span>HTML</span>
+            </div>
+            <div class="legend-item">
+                <div class="color-box" style="background-color: #1572b6;"></div>
+                <span>CSS</span>
+            </div>
+            <div class="legend-item">
+                <div class="color-box" style="background-color: #34495e;"></div>
+                <span>Folders</span>
+            </div>
+        </div>
+
+        <div class="loading" id="loadingIndicator">
+            <div class="spinner"></div>
+            <div>Loading file tree data...</div>
+        </div>
+    </div>
+
+    <script>
+        class FileTreeVisualizer {
+            constructor() {
+                this.scene = null;
+                this.camera = null;
+                this.renderer = null;
+                this.controls = null;
+                this.data = null;
+                this.currentScanIndex = 0;
+                this.isPlaying = false;
+                this.playInterval = null;
+                this.sunburstGroup = null;
+                this.raycaster = new THREE.Raycaster();
+                this.mouse = new THREE.Vector2();
+                this.hoveredObject = null;
+                // Sunburst display parameters
+                this.minAngleDeg = 1;
+                this.ringThickness = 3;
+
+                this.init();
+                this.loadData();
+            }
+
+            init() {
+                this.setupScene();
+                this.setupLighting();
+                this.setupCamera();
+                this.setupRenderer();
+                this.setupControls();
+                this.setupEventListeners();
+                this.animate();
+            }
+
+            setupScene() {
+                this.scene = new THREE.Scene();
+                this.scene.background = new THREE.Color(0x0a0a0a);
+                this.scene.fog = new THREE.Fog(0x0a0a0a, 50, 200);
+            }
+
+            setupLighting() {
+                const ambientLight = new THREE.AmbientLight(0x404040, 1.0);
+                this.scene.add(ambientLight);
+
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 1.8);
+                directionalLight.position.set(10, 10, 10);
+                directionalLight.castShadow = true;
+                directionalLight.shadow.mapSize.width = 2048;
+                directionalLight.shadow.mapSize.height = 2048;
+                this.scene.add(directionalLight);
+
+                const pointLight = new THREE.PointLight(0x4CAF50, 0.8, 300);
+                pointLight.position.set(0, 0, 30);
+                this.scene.add(pointLight);
+            }
+
+            setupCamera() {
+                const container = document.getElementById('threejs-container');
+                this.camera = new THREE.PerspectiveCamera(
+                    75, 
+                    container.clientWidth / container.clientHeight, 
+                    0.1, 
+                    1000
+                );
+                this.camera.position.set(0, 0, 50);
+            }
+
+            setupRenderer() {
+                const container = document.getElementById('threejs-container');
+                this.renderer = new THREE.WebGLRenderer({ antialias: true });
+                this.renderer.setSize(container.clientWidth, container.clientHeight);
+                this.renderer.shadowMap.enabled = true;
+                this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                container.appendChild(this.renderer.domElement);
+            }
+
+            setupControls() {
+                this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+                this.controls.enableDamping = true;
+                this.controls.dampingFactor = 0.05;
+                this.controls.enableZoom = true;
+                this.controls.autoRotate = false;
+                this.controls.autoRotateSpeed = 0.5;
+            }
+
+            setupEventListeners() {
+                window.addEventListener('resize', () => this.onWindowResize());
+                this.renderer.domElement.addEventListener('mousemove', (event) => this.onMouseMove(event));
+                this.renderer.domElement.addEventListener('mouseleave', () => this.hideHoverPanel());
+
+                document.getElementById('playBtn').addEventListener('click', () => this.play());
+                document.getElementById('pauseBtn').addEventListener('click', () => this.pause());
+                document.getElementById('resetBtn').addEventListener('click', () => this.reset());
+                document.getElementById('timelineSlider').addEventListener('input', (e) => {
+                    this.setCurrentScan(parseInt(e.target.value));
+                });
+                // Sunburst controls
+                const minAngleSlider = document.getElementById('minAngleSlider');
+                const minAngleValue = document.getElementById('minAngleValue');
+                minAngleSlider.addEventListener('input', (e) => {
+                    this.minAngleDeg = parseInt(e.target.value);
+                    minAngleValue.textContent = this.minAngleDeg;
+                    this.updateVisualization();
+                });
+                const ringThicknessSlider = document.getElementById('ringThicknessSlider');
+                const ringThicknessValue = document.getElementById('ringThicknessValue');
+                ringThicknessSlider.addEventListener('input', (e) => {
+                    this.ringThickness = parseInt(e.target.value);
+                    ringThicknessValue.textContent = this.ringThickness;
+                    this.updateVisualization();
+                });
+            }
+
+            async loadData() {
+                try {
+                    const response = await fetch('file_tree_data.json');
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    this.data = await response.json();
+                    this.initializeTimeline();
+                    this.hideLoading();
+                } catch (error) {
+                    this.showError(`Failed to load data: ${error.message}`);
+                }
+            }
+
+            initializeTimeline() {
+                if (!this.data || !this.data.timeline || this.data.timeline.length === 0) {
+                    this.showError('No timeline data available');
+                    return;
+                }
+
+                const slider = document.getElementById('timelineSlider');
+                slider.max = this.data.timeline.length - 1;
+                slider.value = 0;
+                
+                this.currentScanIndex = 0;
+                this.updateVisualization();
+                this.updateInfo();
+            }
+
+            createSunburst(treeData, scanIndex) {
+                const group = new THREE.Group();
+                const minAngleRad = this.minAngleDeg * Math.PI / 180;
+                const ringThickness = this.ringThickness;
+                const createRingSegment = (node, innerRadius, outerRadius, startAngle, endAngle, depth, colorOverride = null) => {
+                    const segments = 64;
+                    const geometry = new THREE.RingGeometry(
+                        innerRadius,
+                        outerRadius,
+                        segments,
+                        1,
+                        startAngle,
+                        endAngle - startAngle
+                    );
+                    const material = new THREE.MeshLambertMaterial({
+                        color: colorOverride || new THREE.Color(node.color),
+                        transparent: true,
+                        opacity: 0.8
+                    });
+                    const mesh = new THREE.Mesh(geometry, material);
+                    mesh.position.z = depth * 2 - scanIndex * 10;
+                    mesh.receiveShadow = true;
+                    mesh.castShadow = true;
+                    mesh.userData = { node, scanIndex, depth };
+                    return mesh;
+                };
+                const buildSunburst = (node, innerRadius, outerRadius, startAngle, endAngle, depth = 0, siblingIndex = 0, siblingCount = 1) => {
+                    // Adjust color for files: vary lightness by sibling index
+                    let baseColor = new THREE.Color(node.color);
+                    if (node.type === 'file' && siblingCount > 1) {
+                        const hsl = {};
+                        baseColor.getHSL(hsl);
+                        // Spread lightness between 0.45 and 0.65
+                        hsl.l = 0.45 + 0.2 * (siblingIndex / (siblingCount - 1));
+                        baseColor.setHSL(hsl.h, hsl.s, hsl.l);
+                    }
+
+                    // Create the segment with the adjusted color
+                    const mesh = createRingSegment(node, innerRadius, outerRadius, startAngle, endAngle, depth, baseColor);
+                    group.add(mesh);
+
+                    if (node.children && node.children.length > 0) {
+                        const n = node.children.length;
+                        const totalSize = node.children.reduce((sum, child) => sum + (child.size || 1), 0);
+                        const totalMinAngle = n * minAngleRad;
+                        const availableAngle = Math.max(0, (endAngle - startAngle) - totalMinAngle);
+                        let currentAngle = startAngle;
+                        node.children.forEach((child, i) => {
+                            const childSize = child.size || 1;
+                            const angleSpan = minAngleRad + (availableAngle * (childSize / totalSize));
+                            const childEndAngle = currentAngle + angleSpan;
+                            buildSunburst(
+                                child,
+                                outerRadius,
+                                outerRadius + ringThickness,
+                                currentAngle,
+                                childEndAngle,
+                                depth + 1,
+                                i,
+                                n
+                            );
+                            currentAngle = childEndAngle;
+                        });
+                    }
+                };
+                buildSunburst(treeData, 2, 2 + ringThickness, 0, Math.PI * 2);
+                return group;
+            }
+
+            updateVisualization() {
+                if (!this.data || !this.data.timeline) return;
+
+                if (this.sunburstGroup) {
+                    this.scene.remove(this.sunburstGroup);
+                }
+
+                const currentScan = this.data.timeline[this.currentScanIndex];
+                this.sunburstGroup = this.createSunburst(currentScan.tree_data, this.currentScanIndex);
+                this.scene.add(this.sunburstGroup);
+
+                document.getElementById('currentScan').textContent = 
+                    `${this.currentScanIndex + 1} of ${this.data.timeline.length}`;
+            }
+
+            updateInfo() {
+                if (!this.data || !this.data.timeline) return;
+
+                const currentScan = this.data.timeline[this.currentScanIndex];
+                
+                document.getElementById('scanTimestamp').textContent = 
+                    new Date(currentScan.timestamp).toLocaleString();
+                document.getElementById('totalFiles').textContent = 
+                    currentScan.total_files.toLocaleString();
+                document.getElementById('totalSize').textContent = 
+                    this.formatBytes(currentScan.total_size);
+                document.getElementById('scanDuration').textContent = 
+                    `${currentScan.scan_duration.toFixed(2)}s`;
+            }
+
+            formatBytes(bytes) {
+                if (bytes === 0) return '0 Bytes';
+                const k = 1024;
+                const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            }
+
+            onMouseMove(event) {
+                const rect = this.renderer.domElement.getBoundingClientRect();
+                this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+                this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+                this.raycaster.setFromCamera(this.mouse, this.camera);
+                const intersects = this.raycaster.intersectObjects(this.scene.children, true);
+
+                if (intersects.length > 0) {
+                    const intersected = intersects[0].object;
+                    if (intersected.userData && intersected.userData.node) {
+                        this.showHoverPanel(intersected.userData.node, event.clientX, event.clientY);
+                        this.hoveredObject = intersected;
+                    }
+                } else {
+                    this.hideHoverPanel();
+                    this.hoveredObject = null;
+                }
+            }
+
+            showHoverPanel(node, x, y) {
+                const panel = document.getElementById('hoverPanel');
+                const content = document.getElementById('hoverContent');
+                
+                let html = `<strong>${node.name}</strong><br>`;
+                html += `Type: ${node.type}<br>`;
+                html += `Size: ${this.formatBytes(node.size)}<br>`;
+                
+                if (node.type === 'file') {
+                    html += `MIME: ${node.mime_type}<br>`;
+                    html += `Hash: ${node.file_hash}`;
+                } else {
+                    html += `Files: ${node.file_count}`;
+                }
+                
+                content.innerHTML = html;
+                panel.style.left = `${x + 15}px`;
+                panel.style.top = `${y - 15}px`;
+                panel.style.opacity = '1';
+            }
+
+            hideHoverPanel() {
+                document.getElementById('hoverPanel').style.opacity = '0';
+            }
+
+            play() {
+                if (this.isPlaying) return;
+                
+                this.isPlaying = true;
+                document.getElementById('playBtn').classList.add('active');
+                
+                this.playInterval = setInterval(() => {
+                    if (this.currentScanIndex < this.data.timeline.length - 1) {
+                        this.setCurrentScan(this.currentScanIndex + 1);
+                    } else {
+                        this.pause();
+                    }
+                }, 2000);
+            }
+
+            pause() {
+                this.isPlaying = false;
+                document.getElementById('playBtn').classList.remove('active');
+                
+                if (this.playInterval) {
+                    clearInterval(this.playInterval);
+                    this.playInterval = null;
+                }
+            }
+
+            reset() {
+                this.pause();
+                this.setCurrentScan(0);
+            }
+
+            setCurrentScan(index) {
+                if (!this.data || index < 0 || index >= this.data.timeline.length) return;
+                
+                this.currentScanIndex = index;
+                document.getElementById('timelineSlider').value = index;
+                this.updateVisualization();
+                this.updateInfo();
+            }
+
+            onWindowResize() {
+                const container = document.getElementById('threejs-container');
+                this.camera.aspect = container.clientWidth / container.clientHeight;
+                this.camera.updateProjectionMatrix();
+                this.renderer.setSize(container.clientWidth, container.clientHeight);
+            }
+
+            animate() {
+                requestAnimationFrame(() => this.animate());
+                this.controls.update();
+                this.renderer.render(this.scene, this.camera);
+            }
+
+            hideLoading() {
+                document.getElementById('loadingIndicator').style.display = 'none';
+            }
+
+            showError(message) {
+                const loading = document.getElementById('loadingIndicator');
+                loading.innerHTML = `<div class="error">Error: ${message}</div>`;
+            }
+        }
+
+        // Initialize the visualizer when the page loads
+        window.addEventListener('load', () => {
+            new FileTreeVisualizer();
+        });
+    </script>
+</body>
+</html>
