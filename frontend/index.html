@@ -507,6 +507,13 @@
                         const geometry = new THREE.BufferGeometry().setFromPoints(points);
                         const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0xffffff, opacity: 0.3, transparent: true }));
                         group.add(line);
+                        line.userData = {
+                            type: 'connection',
+                            parentNode: parentInfo.node,
+                            childNode: node
+                        };
+                        this.connectionLines = this.connectionLines || [];
+                        this.connectionLines.push(line);
                     }
                     if (node.children && node.children.length > 0) {
                         const n = node.children.length;
@@ -581,11 +588,26 @@
                 this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
                 this.raycaster.setFromCamera(this.mouse, this.camera);
-                const intersects = this.raycaster.intersectObjects(this.scene.children, true);
+                const intersects = this.raycaster.intersectObjects(
+                    [...this.scene.children, ...(this.connectionLines || [])], true
+                );
+
+                // Revert all previously highlighted lines
+                if (!this.highlightedLines) this.highlightedLines = new Set();
+                this.highlightedLines.forEach(line => {
+                    line.material.color.set(0xffffff);
+                    line.material.opacity = 0.3;
+                });
+                this.highlightedLines.clear();
 
                 if (intersects.length > 0) {
                     const intersected = intersects[0].object;
-                    if (intersected.userData && intersected.userData.node) {
+                    if (intersected.userData && intersected.userData.type === 'connection') {
+                        // Highlight the line
+                        intersected.material.color.set(0xffff00);
+                        intersected.material.opacity = 1.0;
+                        this.highlightedLines.add(intersected);
+                    } else if (intersected.userData && intersected.userData.node) {
                         this.showHoverPanel(intersected.userData.node, event.clientX, event.clientY);
                         this.hoveredObject = intersected;
                     }
