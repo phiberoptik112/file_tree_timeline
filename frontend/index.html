@@ -314,6 +314,9 @@
                 this.minAngleDeg = 1;
                 this.ringThickness = 2.5;
                 this.ringGap = 1.5;
+                // Maps for highlighting
+                this.segmentMeshes = new Map(); // node -> mesh
+                this.connectionLinesByChild = new Map(); // node -> line
 
                 this.init();
                 this.loadData();
@@ -443,6 +446,9 @@
                 const minAngleRad = this.minAngleDeg * Math.PI / 180;
                 const ringThickness = this.ringThickness;
                 const ringGap = this.ringGap;
+                // Maps for highlighting
+                this.segmentMeshes = new Map(); // node -> mesh
+                this.connectionLinesByChild = new Map(); // node -> line
                 // Helper to get the center point of a segment at a given radius and angle
                 const getSegmentCenter = (innerRadius, outerRadius, startAngle, endAngle, z) => {
                     const angle = (startAngle + endAngle) / 2;
@@ -475,8 +481,9 @@
                     mesh.userData = { node, scanIndex, depth, innerRadius, outerRadius, startAngle, endAngle };
                     return mesh;
                 };
-                // Recursive build with connection lines
-                const buildSunburst = (node, innerRadius, outerRadius, startAngle, endAngle, depth = 0, siblingIndex = 0, siblingCount = 1, parentInfo = null) => {
+                // Recursive build with connection lines and parent tracking
+                const buildSunburst = (node, innerRadius, outerRadius, startAngle, endAngle, depth = 0, siblingIndex = 0, siblingCount = 1, parentInfo = null, parentNode = null) => {
+                    node.parent = parentNode; // Track parent for path highlighting
                     let baseColor = new THREE.Color(node.color);
                     if (node.type === 'file' && siblingCount > 1) {
                         const hsl = {};
@@ -486,6 +493,7 @@
                     }
                     const mesh = createRingSegment(node, innerRadius, outerRadius, startAngle, endAngle, depth, baseColor);
                     group.add(mesh);
+                    this.segmentMeshes.set(node, mesh);
                     // Draw connection line if parentInfo is provided
                     if (parentInfo) {
                         const parentCenter = getSegmentCenter(
@@ -514,6 +522,7 @@
                         };
                         this.connectionLines = this.connectionLines || [];
                         this.connectionLines.push(line);
+                        this.connectionLinesByChild.set(node, line);
                     }
                     if (node.children && node.children.length > 0) {
                         const n = node.children.length;
@@ -534,7 +543,8 @@
                                 depth + 1,
                                 i,
                                 n,
-                                { innerRadius, outerRadius, startAngle, endAngle }
+                                { innerRadius, outerRadius, startAngle, endAngle, node },
+                                node
                             );
                             currentAngle = childEndAngle;
                         });
@@ -592,24 +602,65 @@
                     [...this.scene.children, ...(this.connectionLines || [])], true
                 );
 
-                // Revert all previously highlighted lines
-                if (!this.highlightedLines) this.highlightedLines = new Set();
-                this.highlightedLines.forEach(line => {
-                    line.material.color.set(0xffffff);
-                    line.material.opacity = 0.3;
+                // Revert all previously highlighted objects
+                if (!this.highlightedObjects) this.highlightedObjects = new Set();
+                this.highlightedObjects.forEach(obj => {
+                    // Revert segments
+                    if (obj.isMesh) {
+                        obj.material.color.set(obj.userData.node.color);
+                        obj.material.opacity = 0.8;
+                    }
+                    // Revert lines
+                    if (obj.isLine) {
+                        obj.material.color.set(0xffffff);
+                        obj.material.opacity = 0.3;
+                    }
                 });
-                this.highlightedLines.clear();
+                this.highlightedObjects.clear();
 
                 if (intersects.length > 0) {
                     const intersected = intersects[0].object;
-                    if (intersected.userData && intersected.userData.type === 'connection') {
-                        // Highlight the line
-                        intersected.material.color.set(0xffff00);
-                        intersected.material.opacity = 1.0;
-                        this.highlightedLines.add(intersected);
-                    } else if (intersected.userData && intersected.userData.node) {
+                    // Highlight path if hovering a segment
+                    if (intersected.userData && intersected.userData.node) {
+                        let node = intersected.userData.node;
+                        while (node) {
+                            // Highlight segment
+                            const mesh = this.segmentMeshes.get(node);
+                            if (mesh) {
+                                mesh.material.color.set('#00ff66');
+                                mesh.material.opacity = 1.0;
+                                this.highlightedObjects.add(mesh);
+                            }
+                            // Highlight connection line from parent to node
+                            const line = this.connectionLinesByChild.get(node);
+                            if (line) {
+                                line.material.color.set('#00ff66');
+                                line.material.opacity = 1.0;
+                                this.highlightedObjects.add(line);
+                            }
+                            node = node.parent;
+                        }
                         this.showHoverPanel(intersected.userData.node, event.clientX, event.clientY);
                         this.hoveredObject = intersected;
+                    } else if (intersected.userData && intersected.userData.type === 'connection') {
+                        // If hovering a connection line, highlight it and its child/parent segments
+                        const line = intersected;
+                        line.material.color.set('#00ff66');
+                        line.material.opacity = 1.0;
+                        this.highlightedObjects.add(line);
+                        // Highlight child and parent segments
+                        const childMesh = this.segmentMeshes.get(line.userData.childNode);
+                        if (childMesh) {
+                            childMesh.material.color.set('#00ff66');
+                            childMesh.material.opacity = 1.0;
+                            this.highlightedObjects.add(childMesh);
+                        }
+                        const parentMesh = this.segmentMeshes.get(line.userData.parentNode);
+                        if (parentMesh) {
+                            parentMesh.material.color.set('#00ff66');
+                            parentMesh.material.opacity = 1.0;
+                            this.highlightedObjects.add(parentMesh);
+                        }
                     }
                 } else {
                     this.hideHoverPanel();
