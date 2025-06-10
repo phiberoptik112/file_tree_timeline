@@ -283,24 +283,6 @@ class FileTreeScanner:
     
     def _transform_for_sunburst(self, node_data: Dict[str, Any], scan_index: int) -> Dict[str, Any]:
         """Transform tree data for sunburst visualization"""
-        def get_color_for_file(mime_type: str) -> str:
-            color_map = {
-                'text/javascript': '#f7df1e',  # Yellow for JS
-                'application/javascript': '#f7df1e',
-                'text/x-python': '#3776ab',  # Blue for Python
-                'text/html': '#e34c26',  # Orange for HTML
-                'text/css': '#1572b6',  # Blue for CSS
-                'application/json': '#000000',  # Black for JSON
-                'text/markdown': '#083fa1',  # Blue for Markdown
-                'image/': '#ff6b6b',  # Red for images
-                'text/': '#95a5a6',  # Gray for text files
-            }
-            
-            for pattern, color in color_map.items():
-                if mime_type.startswith(pattern):
-                    return color
-            return '#bdc3c7'  # Default gray
-        
         def transform_node(node: Dict[str, Any], depth: int) -> Dict[str, Any]:
             if 'children' in node:  # Folder
                 children = []
@@ -316,7 +298,6 @@ class FileTreeScanner:
                     'file_count': node['file_count'],
                     'depth': depth,
                     'scan_index': scan_index,
-                    'color': '#34495e',  # Dark blue-gray for folders
                     'children': children
                 }
             else:  # File
@@ -327,7 +308,6 @@ class FileTreeScanner:
                     'mime_type': node['mime_type'],
                     'depth': depth,
                     'scan_index': scan_index,
-                    'color': get_color_for_file(node['mime_type']),
                     'file_hash': node['file_hash']
                 }
         

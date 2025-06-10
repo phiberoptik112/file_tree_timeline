@@ -25,6 +25,7 @@ An interactive 3D visualization tool that tracks file system changes over time u
 cd file-tree-timeline
 python backend/scanner.py sample_data/example_project/
 ```
+cd file-tree-timeline && python backend/scanner.py sample_data/24-004_exampleprojectfolder
 
 ### 2. Start Web Server
 ```bash

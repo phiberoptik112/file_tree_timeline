@@ -208,6 +208,53 @@
             margin-right: 8px;
             border-radius: 3px;
         }
+
+        .legend-category {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin: 10px 0 5px 0;
+            opacity: 0.7;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 5px;
+        }
+
+        .legend-category:first-child {
+            margin-top: 0;
+        }
+
+        .details-panel {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            border-radius: 10px;
+            padding: 18px 22px;
+            min-width: 260px;
+            max-width: 350px;
+            color: #fff;
+            border: 1px solid rgba(255,255,255,0.2);
+            font-size: 15px;
+            z-index: 10;
+            box-shadow: 0 2px 16px rgba(0,0,0,0.25);
+            transition: opacity 0.3s;
+        }
+        .details-panel .details-title {
+            font-weight: bold;
+            font-size: 17px;
+            margin-bottom: 8px;
+        }
+        .details-panel .details-label {
+            font-size: 12px;
+            opacity: 0.7;
+            margin-top: 6px;
+        }
+        .details-panel .details-value {
+            font-size: 15px;
+            font-weight: 500;
+            margin-bottom: 2px;
+        }
     </style>
 </head>
 <body>
@@ -261,48 +308,13 @@
             </div>
         </div>
 
-        <div class="hover-panel" id="hoverPanel">
-            <div id="hoverContent"></div>
+        <div class="details-panel" id="detailsPanel">
+            <div id="detailsContent">Hover over a file or folder to see details.</div>
         </div>
 
         <div class="legend">
             <h4>File Types</h4>
-            <div class="legend-item">
-                <div class="color-box" style="background-color: #f7df1e;"></div>
-                <span>JavaScript</span>
-            </div>
-            <div class="legend-item">
-                <div class="color-box" style="background-color: #5c37ab;"></div>
-                <span>Python</span>
-            </div>
-            <div class="legend-item">
-                <div class="color-box" style="background-color: #e34c26;"></div>
-                <span>HTML</span>
-            </div>
-            <div class="legend-item">
-                <div class="color-box" style="background-color: #15b6b1;"></div>
-                <span>CSS</span>
-            </div>
-            <div class="legend-item">
-                <div class="color-box" style="background-color: #ff0000;"></div>
-                <span>PDF</span>
-            </div>
-            <div class="legend-item">
-                <div class="color-box" style="background-color: #217346;"></div>
-                <span>Word</span>
-            </div>
-            <div class="legend-item">
-                <div class="color-box" style="background-color: #3c6f1d;"></div>
-                <span>Excel</span>
-            </div>
-            <div class="legend-item">
-                <div class="color-box" style="background-color: #d48300;"></div>
-                <span>Outlook</span>
-            </div>
-            <div class="legend-item">
-                <div class="color-box" style="background-color: #a73a81;"></div>
-                <span>Folders</span>
-            </div>
+            <div id="legendContent"></div>
         </div>
 
         <div class="loading" id="loadingIndicator">
@@ -333,6 +345,33 @@
                 // Maps for highlighting
                 this.segmentMeshes = new Map(); // node -> mesh
                 this.connectionLinesByChild = new Map(); // node -> line
+                // Color mapping for file types
+                this.colorMap = {
+                    // Programming languages
+                    'text/javascript': '#f7df1e',  // JavaScript
+                    'application/javascript': '#f7df1e',
+                    'text/x-python': '#5c37ab',  // Python
+                    'text/html': '#e34c26',  // HTML
+                    'text/css': '#15b6b1',  // CSS
+                    'application/json': '#000000',  // JSON
+                    'text/markdown': '#083fa1',  // Markdown
+                    
+                    // Documents
+                    'application/pdf': '#ff0000',  // PDF
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '#217346',  // Word
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '#3c6f1d',  // Excel
+                    'application/vnd.ms-outlook': '#d48300',  // Outlook
+                    
+                    // Media
+                    'image/': '#ff6b6b',  // Images
+                    'video/': '#9b59b6',  // Video
+                    'audio/': '#3498db',  // Audio
+                    
+                    // Other
+                    'text/': '#95a5a6',  // Text files
+                    'folder': '#a73a81',  // Folders
+                    'default': '#bdc3c7'  // Default gray
+                };
 
                 this.init();
                 this.loadData();
@@ -345,6 +384,7 @@
                 this.setupRenderer();
                 this.setupControls();
                 this.setupEventListeners();
+                this.updateLegend();
                 this.animate();
             }
 
@@ -457,6 +497,25 @@
                 this.updateInfo();
             }
 
+            getColorForNode(node) {
+                if (node.type === 'folder') {
+                    return this.colorMap['folder'];
+                }
+                const mimeType = node.mime_type;
+                // 1. Exact match
+                if (mimeType && this.colorMap[mimeType]) {
+                    return this.colorMap[mimeType];
+                }
+                // 2. Prefix match (e.g., image/, text/)
+                for (const [pattern, color] of Object.entries(this.colorMap)) {
+                    if (pattern.endsWith('/') && mimeType && mimeType.startsWith(pattern)) {
+                        return color;
+                    }
+                }
+                // 3. Fallback
+                return this.colorMap['default'];
+            }
+
             createSunburst(treeData, scanIndex) {
                 const group = new THREE.Group();
                 const minAngleRad = this.minAngleDeg * Math.PI / 180;
@@ -486,7 +545,7 @@
                         endAngle - startAngle
                     );
                     const material = new THREE.MeshLambertMaterial({
-                        color: colorOverride || new THREE.Color(node.color),
+                        color: colorOverride || new THREE.Color(this.getColorForNode(node)),
                         transparent: true,
                         opacity: 0.8
                     });
@@ -623,7 +682,7 @@
                 this.highlightedObjects.forEach(obj => {
                     // Revert segments
                     if (obj.isMesh) {
-                        obj.material.color.set(obj.userData.node.color);
+                        obj.material.color.set(this.getColorForNode(obj.userData.node));
                         obj.material.opacity = 0.8;
                     }
                     // Revert lines
@@ -656,7 +715,7 @@
                             }
                             node = node.parent;
                         }
-                        this.showHoverPanel(intersected.userData.node, event.clientX, event.clientY);
+                        this.showDetailsPanel(intersected.userData.node);
                         this.hoveredObject = intersected;
                     } else if (intersected.userData && intersected.userData.type === 'connection') {
                         // If hovering a connection line, highlight it and its child/parent segments
@@ -677,36 +736,35 @@
                             parentMesh.material.opacity = 1.0;
                             this.highlightedObjects.add(parentMesh);
                         }
+                        this.showDetailsPanel(null); // Clear details for lines
                     }
                 } else {
-                    this.hideHoverPanel();
+                    this.showDetailsPanel(null);
                     this.hoveredObject = null;
                 }
             }
 
-            showHoverPanel(node, x, y) {
-                const panel = document.getElementById('hoverPanel');
-                const content = document.getElementById('hoverContent');
-                
-                let html = `<strong>${node.name}</strong><br>`;
-                html += `Type: ${node.type}<br>`;
-                html += `Size: ${this.formatBytes(node.size)}<br>`;
-                
-                if (node.type === 'file') {
-                    html += `MIME: ${node.mime_type}<br>`;
-                    html += `Hash: ${node.file_hash}`;
-                } else {
-                    html += `Files: ${node.file_count}`;
+            showDetailsPanel(node) {
+                const panel = document.getElementById('detailsPanel');
+                const content = document.getElementById('detailsContent');
+                if (!node) {
+                    content.innerHTML = 'Hover over a file or folder to see details.';
+                    return;
                 }
-                
+                let html = `<div class='details-title'>${node.name}</div>`;
+                html += `<div class='details-label'>Type</div><div class='details-value'>${node.type}</div>`;
+                html += `<div class='details-label'>Size</div><div class='details-value'>${this.formatBytes(node.size)}</div>`;
+                if (node.type === 'file') {
+                    html += `<div class='details-label'>MIME</div><div class='details-value'>${node.mime_type}</div>`;
+                    html += `<div class='details-label'>Hash</div><div class='details-value'>${node.file_hash}</div>`;
+                } else {
+                    html += `<div class='details-label'>Files</div><div class='details-value'>${node.file_count}</div>`;
+                }
                 content.innerHTML = html;
-                panel.style.left = `${x + 15}px`;
-                panel.style.top = `${y - 15}px`;
-                panel.style.opacity = '1';
             }
 
             hideHoverPanel() {
-                document.getElementById('hoverPanel').style.opacity = '0';
+                // No-op: hover panel is not used anymore
             }
 
             play() {
@@ -768,6 +826,50 @@
             showError(message) {
                 const loading = document.getElementById('loadingIndicator');
                 loading.innerHTML = `<div class="error">Error: ${message}</div>`;
+            }
+
+            updateLegend() {
+                const legendContent = document.getElementById('legendContent');
+                const categories = {
+                    'Programming': ['text/javascript', 'text/x-python', 'text/html', 'text/css', 'application/json', 'text/markdown'],
+                    'Documents': ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 
+                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-outlook'],
+                    'Media': ['image/', 'video/', 'audio/'],
+                    'Other': ['text/', 'folder', 'default']
+                };
+
+                let html = '';
+                for (const [category, types] of Object.entries(categories)) {
+                    html += `<div class="legend-category">${category}</div>`;
+                    types.forEach(type => {
+                        const color = this.colorMap[type];
+                        const label = type.split('/').pop().replace('application/vnd.', '').replace('openxmlformats-officedocument.', '')
+                            .replace('wordprocessingml.document', 'Word')
+                            .replace('spreadsheetml.sheet', 'Excel')
+                            .replace('ms-outlook', 'Outlook')
+                            .replace('x-python', 'Python')
+                            .replace('javascript', 'JavaScript')
+                            .replace('html', 'HTML')
+                            .replace('css', 'CSS')
+                            .replace('json', 'JSON')
+                            .replace('markdown', 'Markdown')
+                            .replace('pdf', 'PDF')
+                            .replace('image', 'Images')
+                            .replace('video', 'Video')
+                            .replace('audio', 'Audio')
+                            .replace('text', 'Text Files')
+                            .replace('folder', 'Folders')
+                            .replace('default', 'Other Files');
+                        
+                        html += `
+                            <div class="legend-item">
+                                <div class="color-box" style="background-color: ${color};"></div>
+                                <span>${label}</span>
+                            </div>
+                        `;
+                    });
+                }
+                legendContent.innerHTML = html;
             }
         }
 
