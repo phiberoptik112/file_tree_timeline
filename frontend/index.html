@@ -361,11 +361,20 @@
                     'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '#217346',  // Word
                     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '#3c6f1d',  // Excel
                     'application/vnd.ms-outlook': '#d48300',  // Outlook
+                    'application/vnd.ms-outlook.msg': '#d48300',  // Outlook MSG
+                    'message/rfc822': '#d48300',  // Email messages
                     
                     // Media
                     'image/': '#ff6b6b',  // Images
                     'video/': '#9b59b6',  // Video
                     'audio/': '#3498db',  // Audio
+                    
+                    // Archives
+                    'application/zip': '#e67e22',  // ZIP
+                    'application/x-rar-compressed': '#e67e22',  // RAR
+                    'application/x-7z-compressed': '#e67e22',  // 7Z
+                    'application/x-tar': '#e67e22',  // TAR
+                    'application/gzip': '#e67e22',  // GZIP
                     
                     // Other
                     'text/': '#95a5a6',  // Text files
@@ -373,6 +382,9 @@
                     'default': '#bdc3c7'  // Default gray
                 };
 
+                // Initialize color cache
+                this.colorCache = new Map();
+                
                 this.init();
                 this.loadData();
             }
@@ -419,6 +431,7 @@
                     1000
                 );
                 this.camera.position.set(0, 0, 50);
+
             }
 
             setupRenderer() {
@@ -498,32 +511,83 @@
             }
 
             getColorForNode(node) {
+                // Check cache first
+                if (this.colorCache.has(node)) {
+                    return this.colorCache.get(node);
+                }
+
+                let color;
                 if (node.type === 'folder') {
-                    return this.colorMap['folder'];
-                }
-                const mimeType = node.mime_type;
-                // 1. Exact match
-                if (mimeType && this.colorMap[mimeType]) {
-                    return this.colorMap[mimeType];
-                }
-                // 2. Prefix match (e.g., image/, text/)
-                for (const [pattern, color] of Object.entries(this.colorMap)) {
-                    if (pattern.endsWith('/') && mimeType && mimeType.startsWith(pattern)) {
-                        return color;
+                    color = this.colorMap['folder'];
+                } else {
+                    const mimeType = node.mime_type;
+                    if (!mimeType) {
+                        color = this.colorMap['default'];
+                    } else {
+                        // 1. Exact match
+                        if (this.colorMap[mimeType]) {
+                            color = this.colorMap[mimeType];
+                        } else {
+                            // 2. Check file extension for common types
+                            const extension = node.name.split('.').pop().toLowerCase();
+                            const extensionMap = {
+                                'msg': this.colorMap['application/vnd.ms-outlook.msg'],
+                                'eml': this.colorMap['message/rfc822'],
+                                'zip': this.colorMap['application/zip'],
+                                'rar': this.colorMap['application/x-rar-compressed'],
+                                '7z': this.colorMap['application/x-7z-compressed'],
+                                'tar': this.colorMap['application/x-tar'],
+                                'gz': this.colorMap['application/gzip'],
+                                'pdf': this.colorMap['application/pdf'],
+                                'docx': this.colorMap['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+                                'xlsx': this.colorMap['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+                                'doc': this.colorMap['application/vnd.ms-outlook'],
+                                'txt': this.colorMap['text/'],
+                                'md': this.colorMap['text/markdown']
+                            };
+                            if (extensionMap[extension]) {
+                                color = extensionMap[extension];
+                            } else {
+                                // 3. Prefix match (e.g., image/, text/)
+                                let found = false;
+                                for (const [pattern, patternColor] of Object.entries(this.colorMap)) {
+                                    if (pattern.endsWith('/') && mimeType.startsWith(pattern)) {
+                                        color = patternColor;
+                                        found = true;
+                                        break;
+                                    }
+                                }
+                                if (!found) {
+                                    color = this.colorMap['default'];
+                                }
+                            }
+                        }
                     }
                 }
-                // 3. Fallback
-                return this.colorMap['default'];
-            }
 
+                // Always prefix with #
+                if (typeof color === 'string' && !color.startsWith('#')) {
+                    color = `#${color}`;
+                }
+
+                // Cache the color
+                this.colorCache.set(node, color);
+                return color;
+            }
+            
             createSunburst(treeData, scanIndex) {
                 const group = new THREE.Group();
                 const minAngleRad = this.minAngleDeg * Math.PI / 180;
                 const ringThickness = this.ringThickness;
                 const ringGap = this.ringGap;
+                
+                // Clear color cache when creating new sunburst
+                this.colorCache.clear();
+                
                 // Maps for highlighting
                 this.segmentMeshes = new Map(); // node -> mesh
                 this.connectionLinesByChild = new Map(); // node -> line
+
                 // Helper to get the center point of a segment at a given radius and angle
                 const getSegmentCenter = (innerRadius, outerRadius, startAngle, endAngle, z) => {
                     const angle = (startAngle + endAngle) / 2;
@@ -534,6 +598,7 @@
                         z
                     );
                 };
+
                 const createRingSegment = (node, innerRadius, outerRadius, startAngle, endAngle, depth, colorOverride = null) => {
                     const segments = 64;
                     const geometry = new THREE.RingGeometry(
@@ -544,31 +609,61 @@
                         startAngle,
                         endAngle - startAngle
                     );
+                    
+                    // Get the color for this node, always with #
+                    let baseColor = colorOverride || this.getColorForNode(node);
+                    if (typeof baseColor === 'string' && !baseColor.startsWith('#')) {
+                        baseColor = `#${baseColor}`;
+                    }
+                    const color = new THREE.Color(baseColor);
                     const material = new THREE.MeshLambertMaterial({
-                        color: colorOverride || new THREE.Color(this.getColorForNode(node)),
+                        color: color,
                         transparent: true,
                         opacity: 0.8
                     });
+                    
                     const mesh = new THREE.Mesh(geometry, material);
                     mesh.position.z = depth * 2 - scanIndex * 10;
                     mesh.receiveShadow = true;
                     mesh.castShadow = true;
-                    mesh.userData = { node, scanIndex, depth, innerRadius, outerRadius, startAngle, endAngle };
+                    
+                    // Store all necessary data in userData, always with #
+                    mesh.userData = { 
+                        node, 
+                        scanIndex, 
+                        depth, 
+                        innerRadius, 
+                        outerRadius, 
+                        startAngle, 
+                        endAngle,
+                        baseColor: baseColor,
+                        originalColor: baseColor
+                    };
+                    
                     return mesh;
                 };
-                // Recursive build with connection lines and parent tracking
+
                 const buildSunburst = (node, innerRadius, outerRadius, startAngle, endAngle, depth = 0, siblingIndex = 0, siblingCount = 1, parentInfo = null, parentNode = null) => {
-                    node.parent = parentNode; // Track parent for path highlighting
-                    let baseColor = new THREE.Color(node.color);
+                    node.parent = parentNode;
+                    
+                    // Get the base color for this node
+                    let baseColor = this.getColorForNode(node);
+                    
+                    // Apply sibling color variation if needed
                     if (node.type === 'file' && siblingCount > 1) {
                         const hsl = {};
-                        baseColor.getHSL(hsl);
+                        new THREE.Color(baseColor).getHSL(hsl);
                         hsl.l = 0.45 + 0.2 * (siblingIndex / (siblingCount - 1));
-                        baseColor.setHSL(hsl.h, hsl.s, hsl.l);
+                        const color = new THREE.Color();
+                        color.setHSL(hsl.h, hsl.s, hsl.l);
+                        baseColor = color.getHexString();
                     }
+                    
+                    // Create the segment with the determined color
                     const mesh = createRingSegment(node, innerRadius, outerRadius, startAngle, endAngle, depth, baseColor);
                     group.add(mesh);
                     this.segmentMeshes.set(node, mesh);
+                    
                     // Draw connection line if parentInfo is provided
                     if (parentInfo) {
                         const parentCenter = getSegmentCenter(
@@ -599,19 +694,23 @@
                         this.connectionLines.push(line);
                         this.connectionLinesByChild.set(node, line);
                     }
+                    
+                    // Process children if they exist
                     if (node.children && node.children.length > 0) {
                         const n = node.children.length;
                         const totalSize = node.children.reduce((sum, child) => sum + (child.size || 1), 0);
                         const totalMinAngle = n * minAngleRad;
                         const availableAngle = Math.max(0, (endAngle - startAngle) - totalMinAngle);
                         let currentAngle = startAngle;
+                        
                         node.children.forEach((child, i) => {
                             const childSize = child.size || 1;
                             const angleSpan = minAngleRad + (availableAngle * (childSize / totalSize));
                             const childEndAngle = currentAngle + angleSpan;
+                            
                             buildSunburst(
                                 child,
-                                outerRadius + ringGap, // Add gap between rings
+                                outerRadius + ringGap,
                                 outerRadius + ringGap + ringThickness,
                                 currentAngle,
                                 childEndAngle,
@@ -621,6 +720,7 @@
                                 { innerRadius, outerRadius, startAngle, endAngle, node },
                                 node
                             );
+                            
                             currentAngle = childEndAngle;
                         });
                     }
@@ -631,6 +731,10 @@
 
             updateVisualization() {
                 if (!this.data || !this.data.timeline) return;
+
+                console.log('[UpdateViz] Clearing color cache and updating visualization');
+                // Clear color cache when updating visualization
+                this.colorCache.clear();
 
                 if (this.sunburstGroup) {
                     this.scene.remove(this.sunburstGroup);
@@ -682,7 +786,13 @@
                 this.highlightedObjects.forEach(obj => {
                     // Revert segments
                     if (obj.isMesh) {
-                        obj.material.color.set(this.getColorForNode(obj.userData.node));
+                        let originalColor = obj.userData.originalColor;
+                        if (typeof originalColor === 'string' && !originalColor.startsWith('#')) {
+                            originalColor = `#${originalColor}`;
+                        }
+                        if (originalColor) {
+                            obj.material.color.set(originalColor);
+                        }
                         obj.material.opacity = 0.8;
                     }
                     // Revert lines
@@ -702,6 +812,14 @@
                             // Highlight segment
                             const mesh = this.segmentMeshes.get(node);
                             if (mesh) {
+                                // Store current color if not already stored
+                                if (!mesh.userData.originalColor) {
+                                    let currentColor = mesh.material.color.getHexString();
+                                    if (typeof currentColor === 'string' && !currentColor.startsWith('#')) {
+                                        currentColor = `#${currentColor}`;
+                                    }
+                                    mesh.userData.originalColor = currentColor;
+                                }
                                 mesh.material.color.set('#00ff66');
                                 mesh.material.opacity = 1.0;
                                 this.highlightedObjects.add(mesh);
@@ -723,15 +841,30 @@
                         line.material.color.set('#00ff66');
                         line.material.opacity = 1.0;
                         this.highlightedObjects.add(line);
+                        
                         // Highlight child and parent segments
                         const childMesh = this.segmentMeshes.get(line.userData.childNode);
                         if (childMesh) {
+                            if (!childMesh.userData.originalColor) {
+                                let currentColor = childMesh.material.color.getHexString();
+                                if (typeof currentColor === 'string' && !currentColor.startsWith('#')) {
+                                    currentColor = `#${currentColor}`;
+                                }
+                                childMesh.userData.originalColor = currentColor;
+                            }
                             childMesh.material.color.set('#00ff66');
                             childMesh.material.opacity = 1.0;
                             this.highlightedObjects.add(childMesh);
                         }
                         const parentMesh = this.segmentMeshes.get(line.userData.parentNode);
                         if (parentMesh) {
+                            if (!parentMesh.userData.originalColor) {
+                                let currentColor = parentMesh.material.color.getHexString();
+                                if (typeof currentColor === 'string' && !currentColor.startsWith('#')) {
+                                    currentColor = `#${currentColor}`;
+                                }
+                                parentMesh.userData.originalColor = currentColor;
+                            }
                             parentMesh.material.color.set('#00ff66');
                             parentMesh.material.opacity = 1.0;
                             this.highlightedObjects.add(parentMesh);
